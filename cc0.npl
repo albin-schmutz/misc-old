@@ -1,0 +1,2104 @@
+MODULE npcc0; (* von Albin Schmutz, 13.05.2012 *)
+
+
+
+CONST
+
+
+  (* Basis *)
+
+
+  MaxInt = 7FFFFFFFH;
+
+  SizeIdent = 32; SizeString = 128;
+
+  SymAnd = 0;
+  SymArray = SymAnd + 1;
+  SymBegin = SymArray + 1;
+  SymConst = SymBegin + 1;
+  SymDo = SymConst + 1;
+  SymElse = SymDo + 1;
+  SymElsif = SymElse + 1;
+  SymEnd = SymElsif + 1;
+  SymFalse = SymEnd + 1;
+  SymGen = SymFalse + 1;
+  SymIf = SymGen + 1;
+  SymModule = SymIf + 1;
+  SymMove = SymModule + 1;
+  SymNil = SymMove + 1;
+  SymNot = SymNil + 1;
+  SymOf = SymNot + 1;
+  SymOr = SymOf + 1;
+  SymPointer = SymOr + 1;
+  SymProcedure = SymPointer + 1;
+  SymRecord = SymProcedure + 1;
+  SymRepeat = SymRecord + 1;
+  SymThen = SymRepeat + 1;
+  SymTo = SymThen + 1;
+  SymTrue = SymTo + 1;
+  SymType = SymTrue + 1;
+  SymUntil = SymType + 1;
+  SymVar = SymUntil + 1;
+  SymWhile = SymVar + 1;
+
+  NbrOfSyms = SymWhile + 1;
+
+  InlineAssert = NbrOfSyms;
+  InlineGetc = InlineAssert + 1;
+  InlinePutc = InlineGetc + 1;
+  InlinePutce = InlinePutc + 1;
+  InlineNew = InlinePutce + 1;
+
+  InlineBitA = InlineNew + 1;
+  InlineBitO = InlineBitA + 1;
+  InlineBitL = InlineBitO + 1;
+  InlineBitR = InlineBitL + 1;
+  InlineChr = InlineBitR + 1;
+  InlineOrd = InlineChr + 1;
+
+
+  (* Scanner *)
+
+
+  TkNone = -1;
+
+  TkChar = NbrOfSyms;
+  TkInt = TkChar + 1;
+  TkIdent = TkInt + 1;
+  TkString = TkIdent + 1;
+
+  TkAsterisk = TkString + 1;
+  TkBrackL = TkAsterisk + 1;
+  TkBrackR = TkBrackL + 1;
+  TkColon = TkBrackR + 1;
+  TkComma = TkColon + 1;
+  TkDot = TkComma + 1;
+  TkMinus = TkDot + 1;
+  TkParenL = TkMinus + 1;
+  TkParenR = TkParenL + 1;
+  TkPlus = TkParenR + 1;
+  TkSemic = TkPlus + 1;
+  TkSlash = TkSemic + 1;
+  TkSlash2 = TkSlash + 1;
+  TkEq = TkSlash2 + 1;
+  TkEqN = TkEq + 1;
+  TkLss = TkEqN + 1;
+  TkGEq = TkLss + 1;
+  TkLEq = TkGEq + 1;
+  TkGtr = TkLEq + 1;
+
+
+
+  SizeInt = 10;
+
+
+  (* Symboltabelle *)
+
+  (* 1 - 10: skalare *)
+  FormBool = 1; FormChar = 2; FormInt = 3; FormPointer = 4;
+  (* 11 - 20: zusammengesetzte *)
+  FormArray = 11;  FormRecord = 12;
+
+  ClassConst = 1; ClassType = 2; ClassVar = 3; ClassPar = 4;
+  ClassInline = 5; ClassProc = 6; ClassField = 7;
+
+
+
+TYPE
+
+
+  (* Basis *)
+
+
+  Ident = ARRAY SizeIdent OF CHAR;
+  String = ARRAY SizeString OF CHAR;
+
+
+  (* Symboltabelle *)
+
+
+  Forward = POINTER TO ForwardRec;
+  Scope = POINTER TO ScopeRec;
+  Type = POINTER TO  TypeRec;
+  Symbol = POINTER TO SymbolRec;
+
+  ForwardRec = RECORD
+    ident : Ident; (* vordefinierter Record bei Pointer *)
+    type : Type;
+    next : Forward
+  END;
+
+  ScopeRec = RECORD
+    symbols : Symbol;
+    forwards : Forward;
+    parent : Scope
+  END;
+
+  TypeRec = RECORD
+    id : INT;
+    form : INT;
+    size : INT;
+    len : INT; (* Laenge Array *)
+    base : Type; (* Basistyp Array, Pointer *)
+    scope : Scope (* Record-Scope *)
+  END;
+
+  SymbolRec = RECORD
+    id : INT;
+    name : Ident;
+    level : INT; (* Prozedurlevel *)
+    class : INT;
+    type : Type;
+    value : INT; (* Wert oder Adresse *)
+    const : BOOL;
+    scope : Scope; (* Procedure-Scope *)
+    next : Symbol
+  END;
+
+
+  (* Generator *)
+
+
+  Gen = RECORD
+    mode : INT;
+    type : Type;
+    lev : INT;
+    addr : INT
+  END;
+
+
+
+VAR
+
+
+  (* Basis *)
+
+
+  syms : ARRAY NbrOfSyms OF Ident;
+  MinInt : INT;
+
+
+  (* Scanner *)
+
+
+  activeLine : INT; activePos : INT; markedLine : INT; markedPos : INT;
+  char : CHAR; token : INT; value : INT; ident : Ident; string : String;
+
+
+  (* Symboltabelle *)
+
+
+  id : INT;
+
+  boolType : Type; (* Basistypen *)
+  charType : Type;
+  intType : Type;
+
+  topScope : Scope;
+  level : INT;
+  varsize : INT;
+
+  marker : Symbol; (* Markiert letztes Element in Liste *)
+
+
+
+(* * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * *)
+(*                                                                           *)
+(* Basis                                                                     *)
+(*                                                                           *)
+(* * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * *)
+
+
+
+(* Schreibt String bis 0X in Output-Stream *)
+
+PROCEDURE PrintString(CONST string : String);
+
+  VAR pos : INT;
+
+  BEGIN
+    MOVE 0 TO pos;
+    WHILE string[pos] <> 0X DO
+      PUTC(string[pos]); MOVE pos + 1 TO pos
+    END
+  END PrintString;
+
+
+
+(* Schreibt String bis 0X in Error-Stream *)
+
+PROCEDURE PrintStringErr(CONST string : String);
+
+  VAR pos : INT;
+
+  BEGIN
+    MOVE 0 TO pos;
+    WHILE string[pos] <> 0X DO
+      PUTCE(string[pos]); MOVE pos + 1 TO pos
+    END
+  END PrintStringErr;
+
+
+
+(* Schreibt Ident bis 0X in Output-Stream *)
+
+PROCEDURE PrintIdent(CONST ident : Ident);
+
+  VAR pos : INT;
+
+  BEGIN
+    MOVE 0 TO pos;
+    WHILE ident[pos] <> 0X DO
+      PUTC(ident[pos]); MOVE pos + 1 TO pos
+    END
+  END PrintIdent;
+
+
+
+(* Schreibt Ident bis 0X in Error-Stream *)
+
+PROCEDURE PrintIdentErr(CONST ident : Ident);
+
+  VAR pos : INT;
+
+  BEGIN
+    MOVE 0 TO pos;
+    WHILE ident[pos] <> 0X DO
+      PUTCE(ident[pos]); MOVE pos + 1 TO pos
+    END
+  END PrintIdentErr;
+
+
+
+(* Schreibt Integer in Output- order Error-Stream *)
+
+PROCEDURE PrintInt(int : INT; stderr : BOOL);
+
+  VAR i : INT; buf : ARRAY 12 OF CHAR;
+
+  BEGIN
+    MOVE 0 TO i;
+    IF int = MinInt THEN
+      IF stderr THEN
+        PrintStringErr("-2147483648")
+      ELSE
+        PrintString("-2147483648")
+      END;
+      MOVE 0 TO int
+    ELSIF int < 0 THEN
+      IF stderr THEN PUTCE('-') ELSE PUTC('-') END; MOVE -int TO int
+    ELSIF int = 0 THEN
+      MOVE '0' TO buf[0]; MOVE i + 1 TO i
+    END;
+    WHILE int <> 0 DO
+      MOVE CHR(48 + int // 10) TO buf[i];
+      MOVE i + 1 TO i;
+      MOVE int / 10 TO int
+    END;
+    IF stderr THEN
+      WHILE i > 0 DO MOVE i - 1 TO i; PUTCE(buf[i]) END
+    ELSE
+      WHILE i > 0 DO MOVE i - 1 TO i; PUTC(buf[i]) END
+    END
+  END PrintInt;
+
+
+
+(* Vergleicht zeichenweise 2 Idents *)
+
+PROCEDURE CompIdent(VAR result : INT;
+                    CONST ident1 : Ident;
+                    CONST ident2 : Ident);
+
+  VAR pos : INT;
+
+  BEGIN
+    MOVE 0 TO pos; MOVE 0 TO result;
+    WHILE pos < SizeIdent DO
+      MOVE ORD(ident1[pos]) - ORD(ident2[pos]) TO result;
+      IF (ident1[pos] = 0X) OR (ident2[pos] = 0X) OR (result <> 0) THEN
+        MOVE SizeIdent TO pos
+      ELSE
+        MOVE pos + 1 TO pos
+      END
+    END
+  END CompIdent;
+
+
+
+(* Kopiert zeichenweise 2 Ident *)
+
+PROCEDURE CopyIdent(VAR to : Ident; CONST from : Ident);
+
+  VAR pos : INT;
+
+  BEGIN
+    MOVE 0 TO pos;
+    WHILE pos < SizeIdent DO
+      MOVE from[pos] TO to[pos];
+      IF (from[pos] = 0X) THEN
+        MOVE SizeIdent TO pos
+      ELSE
+        MOVE pos + 1 TO pos
+      END
+    END
+  END CopyIdent;
+
+
+
+(* * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * *)
+(*                                                                           *)
+(* Scanner                                                                   *)
+(*                                                                           *)
+(* * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * *)
+
+
+
+PROCEDURE PrintErrorHeader;
+
+  BEGIN
+    PrintStringErr("Error at ");
+    PrintInt(markedLine, TRUE); PUTCE('/'); PrintInt(markedPos, TRUE);
+    PUTCE(':'); PUTCE(' ')
+  END PrintErrorHeader;
+
+
+
+PROCEDURE RaiseError(CONST msg : String);
+
+  BEGIN
+    PrintErrorHeader; PrintStringErr(msg); PUTCE(0AX); ASSERT(FALSE)
+  END RaiseError;
+
+
+
+PROCEDURE ReadChar;
+
+  BEGIN
+    IF char = 0AX THEN
+      MOVE activeLine + 1 TO activeLine; MOVE 0 TO activePos
+    END;
+    MOVE activePos + 1 TO activePos;
+    GETC(char);
+    IF char >= 80X THEN
+      RaiseError("unexpected eof")
+    END
+  END ReadChar;
+
+
+
+PROCEDURE ReadWs;
+
+  BEGIN
+    WHILE (char = ' ') OR (char = 9X) OR (char = 0AX) OR (char = 0DX) DO
+      ReadChar
+    END
+  END ReadWs;
+
+
+
+PROCEDURE ReadToken;
+
+
+  PROCEDURE ScanGen;
+
+    VAR end : CHAR;
+
+    BEGIN
+      ReadChar; ReadWs; MOVE char TO end; ReadChar; ReadWs;
+      WHILE char <> end DO
+        PUTC(char); ReadChar
+      END;
+      ReadChar; MOVE TkNone TO token
+    END ScanGen;
+
+
+  PROCEDURE ScanComment;
+
+    VAR loop : BOOL;
+
+    BEGIN
+      ReadChar; MOVE TRUE TO loop;
+      WHILE loop DO
+        IF char = '*' THEN
+          ReadChar;
+          IF char = ')' THEN MOVE FALSE TO loop; ReadChar END
+        ELSIF char = '(' THEN
+          ReadChar;
+          IF char = '*' THEN ScanComment END
+        ELSE
+          ReadChar
+        END
+      END
+    END ScanComment;
+
+
+  PROCEDURE ScanInt;
+
+    VAR
+      buf : ARRAY SizeInt OF CHAR;
+      pos : INT; pos2 : INT; base : INT;
+      max : INT; maxMod : INT; n : INT;
+      isHex : BOOL;
+
+    BEGIN
+      MOVE 0 TO pos; MOVE 10 TO base; MOVE TRUE TO isHex;
+      WHILE isHex OR (char >= '0') AND (char <= '9') DO
+        IF pos < SizeInt THEN
+          MOVE char TO buf[pos]; MOVE pos + 1 TO pos;
+          ReadChar;
+          MOVE (char >= 'A') AND (char <= 'F') TO isHex;
+          IF isHex THEN MOVE 16 TO base END
+        ELSE
+          RaiseError("integer too long")
+        END
+      END;
+      MOVE TkInt TO token;
+      IF char = 'H' THEN
+        MOVE 16 TO base; ReadChar
+      ELSIF char = 'X' THEN
+        MOVE 16 TO base; ReadChar;
+        MOVE TkChar TO token
+      ELSIF base = 16 THEN
+        RaiseError("postfix H expected")
+      END;
+      MOVE 0 TO pos2; MOVE 0 TO value;
+      MOVE MaxInt / base TO max;
+      MOVE MaxInt // base TO maxMod;
+      WHILE pos2 < pos DO
+        IF (buf[pos2] >= 'A') AND (buf[pos2] <= 'F') THEN
+          MOVE ORD(buf[pos2]) - ORD('A') + 10 TO n
+        ELSE
+          MOVE ORD(buf[pos2]) - ORD('0') TO n
+        END;
+        IF (value < max) OR
+           ((value = max) AND (n <= maxMod)) THEN
+          MOVE base * value + n TO value
+        ELSE
+          RaiseError("integer overflow")
+        END;
+        MOVE pos2 + 1 TO pos2
+      END;
+      IF (token = TkChar) AND (value > 255) THEN
+        RaiseError("invalid char const")
+      END
+    END ScanInt;
+
+
+  PROCEDURE ScanIdent;
+
+    VAR pos : INT; min : INT; max : INT; cmp : INT;
+
+    BEGIN
+      MOVE 0 TO pos;
+      WHILE (char >= 'a') AND (char <= 'z') OR
+            (char >= 'A') AND (char <= 'Z') OR
+            (char >= '0') AND (char <= '9') DO
+        IF pos < SizeIdent - 1 THEN
+          MOVE char TO ident[pos]; MOVE pos + 1 TO pos; ReadChar
+        ELSE
+          RaiseError("identifier too long")
+        END
+      END;
+      MOVE 0X TO ident[pos]; MOVE 0 TO min; MOVE NbrOfSyms - 1 TO max;
+      WHILE min <= max DO
+        MOVE (min + max) / 2 TO token;
+        CompIdent(cmp, ident, syms[token]);
+        IF cmp < 0 THEN
+          MOVE token - 1 TO max
+        ELSIF cmp > 0 THEN
+          MOVE token + 1 TO min
+        ELSE
+          MOVE MaxInt TO min
+        END
+      END;
+      IF min <> MaxInt THEN MOVE TkIdent TO token END;
+      IF token = SymGen THEN ScanGen END
+    END ScanIdent;
+
+
+  PROCEDURE ScanString;
+
+    VAR sep : CHAR; pos : INT;
+
+    BEGIN
+      MOVE 0 TO pos; MOVE char TO sep; ReadChar;
+      WHILE char <> sep DO
+        IF pos < SizeString - 1 THEN
+          MOVE char TO string[pos]; MOVE pos + 1 TO pos; ReadChar
+        ELSE
+          RaiseError("string too long")
+        END
+      END;
+      IF pos = 1 THEN
+        MOVE ORD(string[0]) TO value; MOVE TkChar TO token
+      ELSE
+        MOVE 0X TO string[pos]; MOVE TkString TO token
+      END;
+      ReadChar
+    END ScanString;
+
+
+  BEGIN (* ReadToken *)
+    MOVE TkNone TO token;
+    WHILE token = TkNone DO
+      ReadWs; MOVE activeLine TO markedLine; MOVE activePos TO markedPos;
+      IF char = '*' THEN
+        MOVE TkAsterisk TO token; ReadChar
+      ELSIF char = '[' THEN
+        MOVE TkBrackL TO token; ReadChar
+      ELSIF char = ']' THEN
+        MOVE TkBrackR TO token; ReadChar
+      ELSIF char = ':' THEN
+        MOVE TkColon TO token; ReadChar
+      ELSIF char = ',' THEN
+        MOVE TkComma TO token; ReadChar
+      ELSIF char = '.' THEN
+        MOVE TkDot TO token; ReadChar
+      ELSIF char = '-' THEN
+        MOVE TkMinus TO token; ReadChar
+      ELSIF char = '(' THEN
+        MOVE TkParenL TO token; ReadChar;
+        IF char = '*' THEN
+          MOVE TkNone TO token; ScanComment
+        END
+      ELSIF char = ')' THEN
+        MOVE TkParenR TO token; ReadChar
+      ELSIF char = '+' THEN
+        MOVE TkPlus TO token; ReadChar
+      ELSIF char = ';' THEN
+        MOVE TkSemic TO token; ReadChar
+      ELSIF char = ';' THEN
+        MOVE TkSemic TO token; ReadChar
+      ELSIF char = '/' THEN
+        MOVE TkSlash TO token; ReadChar;
+        IF char = '/' THEN
+          MOVE TkSlash2 TO token; ReadChar
+        END
+      ELSIF char = '=' THEN
+        MOVE TkEq TO token; ReadChar
+      ELSIF char = '>' THEN
+        MOVE TkGtr TO token; ReadChar;
+        IF char = '=' THEN
+          MOVE TkGEq TO token; ReadChar
+        END
+      ELSIF char = '<' THEN
+        MOVE TkLss TO token; ReadChar;
+        IF char = '=' THEN
+          MOVE TkLEq TO token; ReadChar
+        ELSIF char = '>' THEN
+          MOVE TkEqN TO token; ReadChar
+        END
+      ELSIF (char = "'") OR (char = '"') THEN
+        ScanString
+      ELSIF (char >= '0') AND (char <= '9') THEN
+        ScanInt
+      ELSIF (char >= 'a') AND (char <= 'z') OR
+            (char >= 'A') AND (char <= 'Z') THEN
+        ScanIdent
+      ELSE
+        RaiseError("character?")
+      END
+    END
+  END ReadToken;
+
+
+
+(* * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * *)
+(*                                                                           *)
+(* Symboltabelle                                                             *)
+(*                                                                           *)
+(* * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * *)
+
+
+
+PROCEDURE NewType(VAR type : Type; form : INT);
+
+  BEGIN
+    NEW(type);
+    MOVE id TO type.id;
+    MOVE id + 1 TO id;
+    MOVE form TO type.form
+  END NewType;
+
+
+
+PROCEDURE NewSymbol(VAR symbol : Symbol; after : Symbol;
+                    VAR name : Ident; class : INT);
+
+  BEGIN
+    NEW(symbol);
+    CopyIdent(symbol.name, name);
+    MOVE level TO symbol.level;
+    MOVE class TO symbol.class;
+    MOVE NIL TO symbol.type;
+    MOVE FALSE TO symbol.const;
+    MOVE NIL TO symbol.scope;
+    MOVE NIL TO symbol.next;
+    MOVE after.next TO symbol.next;
+    MOVE symbol TO after.next
+  END NewSymbol;
+
+
+
+PROCEDURE NewGen(VAR gen : Gen; symbol : Symbol);
+
+  BEGIN
+    MOVE symbol.class TO gen.mode;
+    MOVE symbol.type TO gen.type;
+    MOVE symbol.level TO gen.lev;
+    MOVE symbol.value TO gen.addr;
+    IF gen.lev = 0 THEN
+      ASSERT(TRUE)
+    ELSIF gen.lev = level THEN
+      ASSERT(TRUE)
+    ELSE
+      RaiseError("identifier not defined")
+    END
+  END NewGen;
+
+
+
+PROCEDURE InitSymbols;
+
+  VAR symbol : Symbol;
+
+
+  PROCEDURE InitTypeSymbol(VAR symbol : Symbol;
+                           CONST str : Ident;
+                           type : Type);
+
+    BEGIN
+      NewSymbol(symbol, symbol, str, ClassType);
+      MOVE type TO symbol.type
+    END InitTypeSymbol;
+
+
+  PROCEDURE InitInlineSymbol(VAR symbol : Symbol;
+                             CONST str : Ident;
+                             value : INT);
+
+    BEGIN
+      NewSymbol(symbol, symbol, str, ClassInline);
+      MOVE value TO symbol.value
+    END InitInlineSymbol;
+
+
+  BEGIN (* InitSymbols *)
+    MOVE topScope.symbols TO symbol;
+    (* Types *)
+    InitTypeSymbol(symbol, "BOOL", boolType);
+    InitTypeSymbol(symbol, "CHAR", charType);
+    InitTypeSymbol(symbol, "INT", intType);
+    (* Inlines *)
+    InitInlineSymbol(symbol, "ASSERT", InlineAssert);
+    InitInlineSymbol(symbol, "GETC", InlineGetc);
+    InitInlineSymbol(symbol, "PUTC", InlinePutc);
+    InitInlineSymbol(symbol, "PUTCE", InlinePutce);
+    InitInlineSymbol(symbol, "NEW", InlineNew);
+    InitInlineSymbol(symbol, "BITA", InlineBitA);
+    InitInlineSymbol(symbol, "BITO", InlineBitO);
+    InitInlineSymbol(symbol, "BITL", InlineBitL);
+    InitInlineSymbol(symbol, "BITR", InlineBitR);
+    InitInlineSymbol(symbol, "CHR", InlineChr);
+    InitInlineSymbol(symbol, "ORD", InlineOrd)
+  END InitSymbols;
+
+
+
+PROCEDURE OpenScope;
+
+  VAR scope : Scope;
+
+  BEGIN
+    NEW(scope);
+    NEW(scope.symbols);
+    MOVE marker TO scope.symbols.next;
+    MOVE NIL TO scope.forwards;
+    MOVE topScope TO scope.parent;
+    MOVE scope TO topScope
+  END OpenScope;
+
+
+
+PROCEDURE CloseScope;
+
+  BEGIN
+    MOVE topScope.parent TO topScope
+  END CloseScope;
+
+
+
+PROCEDURE FindSymbol(VAR symbol : Symbol; scope : Scope; VAR name : Ident);
+
+  VAR cmp : INT;
+
+  BEGIN
+    CopyIdent(marker.name, name);
+    MOVE scope.symbols TO symbol;
+    CompIdent(cmp, symbol.next.name, name);
+    WHILE cmp <> 0 DO
+      MOVE symbol.next TO symbol;
+      CompIdent(cmp, symbol.next.name, name)
+    END
+  END FindSymbol;
+
+
+
+(* * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * *)
+(*                                                                           *)
+(* Generator                                                                 *)
+(*                                                                           *)
+(* * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * *)
+
+
+
+PROCEDURE GenString(CONST string : String);
+
+  VAR pos : INT; c : CHAR;
+
+  BEGIN
+    MOVE 0 TO pos; MOVE string[pos] TO c;
+    WHILE c <> 0X DO
+      IF c = '"' THEN PUTC('\') END;
+      PUTC(c); MOVE pos + 1 TO pos; MOVE string[pos] TO c
+    END
+  END GenString;
+
+
+
+PROCEDURE GenType(type : Type);
+
+  BEGIN
+    PUTC('t'); PUTC('_');
+    PrintInt(type.id, FALSE)
+  END GenType;
+
+
+
+PROCEDURE GenAddr(lev : INT; addr : INT);
+
+  BEGIN
+    PUTC('a'); PUTC('_'); PrintInt(lev, FALSE); PUTC('_');
+    IF addr < 0 THEN
+      PUTC('_');
+      PrintInt(-addr, FALSE)
+    ELSE
+      PrintInt(addr, FALSE)
+    END
+  END GenAddr;
+
+
+
+PROCEDURE GenDecl(symbol : Symbol; var : BOOL);
+
+  BEGIN
+    IF symbol.type.form = FormArray THEN
+      GenType(symbol.type.base);
+      PUTC(' ');
+      GenAddr(symbol.level, symbol.value);
+      PUTC('[');
+      PrintInt(symbol.type.len, FALSE);
+      PUTC(']');
+      PUTC('/'); PUTC('*');
+      PrintIdent(symbol.name);
+      PUTC('*'); PUTC('/')
+    ELSE
+      GenType(symbol.type);
+      PUTC(' ');
+      IF var THEN PUTC('*') END;
+      GenAddr(symbol.level, symbol.value);
+      PUTC('/'); PUTC('*');
+      PrintIdent(symbol.name);
+      PUTC('*'); PUTC('/')
+    END
+  END GenDecl;
+
+
+
+PROCEDURE GenTypeDecls;
+
+  VAR symbol : Symbol;
+
+
+  PROCEDURE Struct(symbol : Symbol);
+
+    BEGIN
+      WHILE symbol <> marker DO
+        GenDecl(symbol, FALSE); PUTC(';'); PUTC(0AX);
+        MOVE symbol.next TO symbol
+      END
+    END Struct;
+
+
+  BEGIN (* GenTypeDecls *)
+    MOVE topScope.symbols.next TO symbol;
+    WHILE symbol <> marker DO
+      IF (symbol.class = ClassType) AND
+         (symbol.type.form >= FormPointer) THEN
+        PUTC(0AX); PrintIdent("typedef"); PUTC(' ');
+        IF symbol.type.form = FormPointer THEN
+          PrintIdent("struct"); PUTC(' ');
+          GenType(symbol.type.base);
+          PUTC('*'); PUTC(' ');
+          GenType(symbol.type)
+        ELSIF symbol.type.form = FormArray THEN
+          GenType(symbol.type.base);
+          PUTC(' ');
+          GenType(symbol.type);
+          PUTC('[');
+          PrintInt(symbol.type.len, FALSE);
+          PUTC(']')
+        ELSIF symbol.type.form = FormRecord THEN
+          PrintIdent("struct"); PUTC(' ');
+          GenType(symbol.type);
+          PUTC('{'); PUTC(0AX);
+          Struct(symbol.type.scope.symbols.next);
+          PUTC('}'); PUTC(' ');
+          GenType(symbol.type)
+        END;
+        PUTC(';');
+        PUTC(' '); PUTC('/'); PUTC('/');
+        PrintIdent(symbol.name);
+        PUTC(0AX)
+      END;
+      MOVE symbol.next TO symbol
+    END
+  END GenTypeDecls;
+
+
+
+PROCEDURE GenVarDecls;
+
+  VAR symbol : Symbol;
+
+  BEGIN
+    MOVE topScope.symbols.next TO symbol;
+    WHILE symbol <> marker DO
+      IF (symbol.class = ClassVar) AND (symbol.value < 0) THEN
+        GenDecl(symbol, FALSE); PUTC(';'); PUTC(0AX)
+      END;
+      MOVE symbol.next TO symbol
+    END
+  END GenVarDecls;
+
+
+
+PROCEDURE GenProcDecl(symbol : Symbol);
+
+
+  PROCEDURE Params(symbol : Symbol);
+
+    VAR first : BOOL;
+
+    BEGIN
+      MOVE TRUE TO first;
+      WHILE symbol <> marker DO
+        IF (symbol.class = ClassPar) OR
+           (symbol.class = ClassVar) AND (symbol.value >= 0) THEN
+          IF first  THEN
+            MOVE FALSE TO first
+          ELSE
+            PUTC(','); PUTC(' ')
+          END;
+          GenDecl(symbol, symbol.class = ClassPar)
+        END;
+        MOVE symbol.next TO symbol
+      END;
+      IF first THEN
+        PrintIdent("void")
+      END
+    END Params;
+
+
+  BEGIN (* GenProcDecl *)
+    PUTC(0AX); PrintIdent("void"); PUTC(' ');
+    GenAddr(symbol.level, symbol.value);
+    PUTC('/'); PUTC('*');
+    PrintIdent(symbol.name);
+    PUTC('*'); PUTC('/');
+    PUTC('(');
+    Params(symbol.scope.symbols.next);
+    PUTC(')')
+  END GenProcDecl;
+
+
+
+PROCEDURE GenProcBody(symbol : Symbol);
+
+
+  BEGIN
+    GenProcDecl(symbol); PUTC(0AX);
+    PUTC('{'); PUTC(0AX);
+    GenVarDecls
+  END GenProcBody;
+
+
+
+PROCEDURE GenProcBodyEnd;
+
+  BEGIN
+    PUTC('}'); PUTC(0AX)
+  END GenProcBodyEnd;
+
+
+
+PROCEDURE GenFactor(VAR gen : Gen);
+
+  BEGIN
+    IF gen.mode = ClassConst THEN
+      IF gen.addr < 0 THEN
+        PrintIdent("(signed)"); PUTC(' ')
+      END;
+      PrintInt(gen.addr, FALSE)
+    ELSIF (gen.mode = ClassPar) AND (gen.type.form <> FormArray) THEN
+       PUTC('('); PUTC('*');
+       GenAddr(gen.lev, gen.addr);
+       PUTC(')')
+    ELSE
+      GenAddr(gen.lev, gen.addr)
+    END
+  END GenFactor;
+
+
+
+(* * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * *)
+(*                                                                           *)
+(* Parser                                                                    *)
+(*                                                                           *)
+(* * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * * *)
+
+
+
+PROCEDURE Accept(accept : INT; CONST msg : String);
+
+  BEGIN
+    IF token <> accept THEN RaiseError(msg) END
+  END Accept;
+
+PROCEDURE AcceptBegin; BEGIN Accept(SymBegin, "BEGIN?") END AcceptBegin;
+PROCEDURE AcceptBrackR; BEGIN Accept(TkBrackR, "] ?") END AcceptBrackR;
+PROCEDURE AcceptColon; BEGIN Accept(TkColon, ": ?") END AcceptColon;
+PROCEDURE AcceptComma; BEGIN Accept(TkComma, ", ?") END AcceptComma;
+PROCEDURE AcceptDo; BEGIN Accept(SymDo, "DO?") END AcceptDo;
+PROCEDURE AcceptDot; BEGIN Accept(TkDot, ". ?") END AcceptDot;
+PROCEDURE AcceptEq; BEGIN Accept(TkEq, "= ?") END AcceptEq;
+PROCEDURE AcceptEnd; BEGIN Accept(SymEnd, "END ?") END AcceptEnd;
+PROCEDURE AcceptIdent; BEGIN Accept(TkIdent, "identifier?") END AcceptIdent;
+PROCEDURE AcceptModule; BEGIN Accept(SymModule, "MODULE?") END AcceptModule;
+PROCEDURE AcceptOf; BEGIN Accept(SymOf, "OF?") END AcceptOf;
+PROCEDURE AcceptParenL; BEGIN Accept(TkParenL, "( ?") END AcceptParenL;
+PROCEDURE AcceptParenR; BEGIN Accept(TkParenR, ") ?") END AcceptParenR;
+PROCEDURE AcceptSemic; BEGIN Accept(TkSemic, "; ?") END AcceptSemic;
+PROCEDURE AcceptTo; BEGIN Accept(SymTo, "TO?") END AcceptTo;
+PROCEDURE AcceptThen; BEGIN Accept(SymThen, "THEN?") END AcceptThen;
+
+
+
+PROCEDURE CheckBool(VAR gen : Gen);
+
+  BEGIN
+    IF gen.type.form <> FormBool THEN
+      RaiseError("bool?")
+    END
+  END CheckBool;
+
+
+
+PROCEDURE CheckChar(VAR gen : Gen);
+
+  BEGIN
+    IF gen.type.form <> FormChar THEN
+      RaiseError("char?")
+    END
+  END CheckChar;
+
+
+
+PROCEDURE CheckInt(VAR gen : Gen);
+
+  BEGIN
+    IF gen.type.form <> FormInt THEN
+      RaiseError("int?")
+    END
+  END CheckInt;
+
+
+
+PROCEDURE CheckPointer(VAR gen : Gen);
+
+  BEGIN
+    IF gen.type.form <> FormPointer THEN
+      RaiseError("pointer?")
+    END
+  END CheckPointer;
+
+
+
+PROCEDURE CheckType(VAR gen : Gen; type : Type);
+
+  BEGIN
+    IF (gen.type <> type) AND
+       ((gen.mode <> ClassConst) OR
+        (gen.type <> intType) OR
+        (gen.addr <> MinInt) OR
+        (type.form <> FormPointer)) THEN
+      RaiseError("incompatible types")
+    END
+  END CheckType;
+
+
+
+PROCEDURE Align(VAR size : INT);
+
+  VAR i : INT; isNeg : BOOL;
+
+  BEGIN
+    MOVE size TO i; MOVE FALSE TO isNeg;
+    IF i < 0 THEN
+      MOVE TRUE TO isNeg;
+      MOVE -i TO i
+    END;
+    MOVE i // intType.size TO i;
+    IF i <> 0 THEN
+      IF isNeg THEN
+        MOVE size + i - intType.size TO size
+      ELSE
+        MOVE size - i + intType.size TO size
+      END
+    END
+  END Align;
+
+
+
+PROCEDURE ParseModule;
+
+  VAR moduleName : Ident; cmp : INT;
+
+
+  PROCEDURE IdentDef(VAR symbol : Symbol; class : INT);
+
+    BEGIN
+      AcceptIdent; FindSymbol(symbol, topScope, ident);
+      IF symbol.next = marker THEN
+        NewSymbol(symbol, symbol, ident, class); ReadToken
+      ELSE
+        RaiseError("multiple definition")
+      END
+    END IdentDef;
+
+
+  PROCEDURE IdentUse(VAR symbol : Symbol);
+
+    VAR scope : Scope;
+
+    BEGIN
+      MOVE topScope TO scope;
+      WHILE scope <> NIL DO
+        FindSymbol(symbol, scope, ident);
+        IF symbol.next = marker THEN
+          MOVE scope.parent TO scope
+        ELSE
+          MOVE NIL TO scope
+        END
+      END;
+      IF symbol.next <> marker THEN
+        MOVE symbol.next TO symbol;
+        ReadToken
+      ELSE
+        RaiseError("identifier not defined")
+      END
+    END IdentUse;
+
+
+  PROCEDURE Expr(VAR symbol : Symbol;
+                 VAR gen : Gen;
+                 expIntConst : BOOL);
+
+    VAR op : INT; gen2 : Gen;
+
+
+    PROCEDURE Selector(VAR gen : Gen);
+
+      VAR symbol : Symbol; gen2 : Gen;
+
+      BEGIN
+        WHILE (token = TkBrackL) OR
+              (token = TkDot) DO
+          IF token = TkBrackL THEN
+            IF gen.type.form = FormArray THEN
+              ReadToken; PUTC('['); Expr(symbol, gen2, FALSE);
+              CheckInt(gen2); MOVE gen.type.base TO gen.type;
+              AcceptBrackR; PUTC(']')
+            ELSE
+              RaiseError("array?")
+            END
+          ELSE
+            IF gen.type.form = FormRecord THEN
+              ReadToken;
+              AcceptIdent;
+              FindSymbol(symbol, gen.type.scope, ident);
+              IF symbol.next = marker THEN
+                RaiseError("identifier not defined")
+              ELSE
+                MOVE symbol.next TO symbol
+              END;
+              MOVE symbol.type TO gen.type;
+              PUTC('.');
+              GenAddr(symbol.level, symbol.value)
+            ELSIF gen.type.form = FormPointer THEN
+              ReadToken;
+              AcceptIdent;
+              FindSymbol(symbol, gen.type.base.scope, ident);
+              IF symbol.next = marker THEN
+                RaiseError("identifier not defined")
+              ELSE
+                MOVE symbol.next TO symbol
+              END;
+              MOVE symbol.type TO gen.type;
+              PUTC('-'); PUTC('>');
+              GenAddr(symbol.level, symbol.value)
+            ELSE
+              RaiseError("record type?")
+            END
+          END;
+          ReadToken
+        END
+      END Selector;
+
+
+    PROCEDURE SimpleExpr(VAR symbol : Symbol;
+                         VAR gen : Gen;
+                         expIntConst : BOOL);
+
+      VAR op : INT; gen2 : Gen;
+
+
+      PROCEDURE Term(VAR symbol : Symbol;
+                     VAR gen : Gen;
+                     expIntConst : BOOL);
+
+        VAR op : INT; gen2 : Gen;
+
+
+        PROCEDURE Mul(VAR gen : Gen; VAR gen2 : Gen);
+
+         VAR i : INT;
+
+          BEGIN
+            IF (gen.addr = 0) OR (gen2.addr = 0) THEN
+              MOVE 0 TO gen.addr
+            ELSE
+              IF (gen.addr > 0) AND (gen2.addr < 0) OR
+                 (gen.addr < 0) AND (gen2.addr > 0) THEN
+                MOVE MinInt TO i
+              ELSE
+                MOVE MaxInt TO i
+              END;
+              MOVE i / gen2.addr TO i;
+              IF (gen.addr < 0) AND (i > gen.addr) OR
+                 (gen.addr > 0) AND (i < gen.addr) THEN
+                RaiseError("integer overflow")
+              ELSE
+                MOVE gen.addr * gen2.addr TO gen.addr
+              END
+            END
+          END Mul;
+
+
+        PROCEDURE Div(VAR gen : Gen; VAR gen2 : Gen);
+
+          BEGIN
+            IF gen2.addr = 0 THEN
+              RaiseError("division by zero")
+            ELSE
+              MOVE gen.addr / gen2.addr TO gen.addr
+            END
+          END Div;
+
+
+        PROCEDURE Mod(VAR gen : Gen; VAR gen2 : Gen);
+
+          BEGIN
+            IF gen2.addr = 0 THEN
+              RaiseError("module by zero")
+            ELSE
+              MOVE gen.addr // gen2.addr TO gen.addr
+            END
+          END Mod;
+
+
+        PROCEDURE Factor(VAR symbol : Symbol;
+                         VAR gen : Gen;
+                         expIntConst : BOOL);
+
+          PROCEDURE Inline(VAR gen : Gen; op : INT);
+
+            VAR symbol : Symbol; gen2 : Gen;
+
+            BEGIN
+              IF (op >= InlineBitA) AND
+                 (op <= InlineOrd) THEN
+                AcceptParenL; ReadToken;
+                Expr(symbol, gen, FALSE);
+                IF op = InlineOrd THEN
+                  CheckChar(gen)
+                ELSE
+                  CheckInt(gen)
+                END;
+                IF op = InlineBitA THEN
+                  AcceptComma;
+                  PUTC(' '); PUTC('&'); PUTC(' ');
+                  ReadToken;
+                  Expr(symbol, gen2, FALSE);
+                  CheckInt(gen)
+                ELSIF op = InlineBitO THEN
+                  AcceptComma;
+                  PUTC(' '); PUTC('|'); PUTC(' ');
+                  ReadToken;
+                  Expr(symbol, gen2, FALSE);
+                  CheckInt(gen)
+                ELSIF op = InlineBitL THEN
+                  AcceptComma;
+                  PUTC('<'); PUTC('<');
+                  ReadToken;
+                  Expr(symbol, gen2, FALSE);
+                  CheckInt(gen)
+                ELSIF op = InlineBitR THEN
+                  AcceptComma;
+                  PUTC('>'); PUTC('>');
+                  ReadToken;
+                  Expr(symbol, gen2, FALSE);
+                  CheckInt(gen)
+                ELSIF op = InlineChr THEN
+                  MOVE charType TO gen.type
+                ELSE (* InlineOrd *)
+                  MOVE intType TO gen.type
+                END;
+                AcceptParenR;
+                ReadToken
+              ELSE
+                RaiseError("factor?")
+              END
+            END Inline;
+
+
+          BEGIN (* Factor *)
+            MOVE ClassConst TO gen.mode;
+            MOVE 0 TO gen.addr;
+            IF token = SymNil THEN
+              MOVE MinInt TO gen.addr;
+              MOVE intType TO gen.type;
+              IF NOT expIntConst THEN PrintIdent("NULL") END;
+              ReadToken
+            ELSIF token = SymFalse THEN
+              MOVE boolType TO gen.type;
+              IF NOT expIntConst THEN GenFactor(gen) END;
+              ReadToken
+            ELSIF token = SymTrue THEN
+              MOVE 1 TO gen.addr;
+              MOVE boolType TO gen.type;
+              IF NOT expIntConst THEN GenFactor(gen) END;
+              ReadToken
+            ELSIF token = TkChar THEN
+              MOVE charType TO gen.type;
+              MOVE value TO gen.addr;
+              IF NOT expIntConst THEN GenFactor(gen) END;
+              ReadToken
+            ELSIF token = TkInt THEN
+              MOVE intType TO gen.type;
+              MOVE value TO gen.addr;
+              IF NOT expIntConst THEN GenFactor(gen) END;
+              ReadToken
+            ELSIF token = SymNot THEN
+              ReadToken;
+              PUTC('!');
+              Factor(symbol, gen, expIntConst)
+            ELSIF token = TkParenL THEN
+              ReadToken;
+              PUTC('(');
+              Expr(symbol, gen, expIntConst);
+              AcceptParenR;
+              PUTC(')');
+              ReadToken
+            ELSIF token = TkIdent THEN
+              IdentUse(symbol);
+              IF expIntConst AND
+                 (symbol.class <> ClassConst) THEN
+                RaiseError("int const?")
+              END;
+              NewGen(gen, symbol);
+              IF (symbol.class = ClassConst) THEN
+                IF NOT expIntConst THEN GenFactor(gen) END
+              ELSIF (symbol.class = ClassInline) THEN
+                Inline(gen, symbol.value)
+              ELSIF (symbol.class = ClassVar) OR
+                    (symbol.class = ClassPar) THEN
+                GenFactor(gen);
+                Selector(gen)
+              ELSE
+                RaiseError("factor?")
+              END
+            ELSE
+              RaiseError("factor?")
+            END
+          END Factor;
+
+
+        BEGIN (* Term *)
+          IF NOT expIntConst THEN PUTC('(') END;
+          Factor(symbol, gen, expIntConst);
+          WHILE (token = TkAsterisk) OR
+                (token = TkSlash) OR
+                (token = TkSlash2) OR
+                (token = SymAnd) DO
+            MOVE token TO op;
+            IF op = SymAnd THEN
+              CheckBool(gen)
+            ELSE
+              CheckInt(gen)
+            END;
+            ReadToken;
+            IF NOT expIntConst THEN
+              PUTC(' ');
+              IF op = TkAsterisk THEN PUTC('*')
+              ELSIF op = TkSlash THEN PUTC('/')
+              ELSIF op = TkSlash2 THEN PUTC('%')
+              ELSE PUTC('&'); PUTC('&') END;
+              PUTC(' ')
+            END;
+            Factor(symbol, gen2, expIntConst);
+            IF gen.type = gen2.type THEN
+              IF (gen.type.form = FormInt) AND
+                 (gen.mode = ClassConst) AND
+                 (gen2.mode = ClassConst) THEN
+                IF op = TkAsterisk THEN
+                  Mul(gen, gen2)
+                ELSIF op = TkSlash THEN
+                  Div(gen, gen2)
+                ELSIF op = TkSlash2 THEN
+                  Mod(gen, gen2)
+                END
+              ELSE
+                IF expIntConst THEN
+                  RaiseError("const int?")
+                END
+              END
+            ELSE
+              RaiseError("incompatible types")
+            END
+          END;
+          IF NOT expIntConst THEN PUTC(')') END
+        END Term;
+
+
+      PROCEDURE Add(VAR gen : Gen; VAR gen2 : Gen);
+
+        BEGIN
+          IF MaxInt - gen2.addr < gen.addr THEN
+            RaiseError("integer overflow")
+          ELSE
+            MOVE gen.addr + gen2.addr TO gen.addr
+          END
+        END Add;
+
+
+      PROCEDURE Sub(VAR gen : Gen; VAR gen2 : Gen);
+
+        BEGIN
+          IF MinInt + gen2.addr > gen.addr THEN
+            RaiseError("integer overflow")
+          ELSE
+            MOVE gen.addr - gen2.addr TO gen.addr
+          END
+        END Sub;
+
+
+      BEGIN (* SimpleExpr *)
+        IF NOT expIntConst THEN PUTC('(') END;
+        IF token = TkPlus THEN
+          ReadToken;
+          IF NOT expIntConst THEN PUTC('(') END;
+          Term(symbol, gen, expIntConst);
+          CheckInt(gen)
+        ELSIF token = TkMinus THEN
+          ReadToken;
+          IF NOT expIntConst THEN PUTC('-'); PUTC('(') END;
+          Term(symbol, gen, expIntConst);
+          CheckInt(gen);
+          IF gen.mode = ClassConst THEN
+            IF gen.addr <> MinInt THEN
+              MOVE -gen.addr TO gen.addr
+            ELSE
+              RaiseError("integer overflow")
+            END
+          ELSE
+            IF expIntConst THEN
+              RaiseError("const int?")
+            END
+          END
+        ELSE
+          IF NOT expIntConst THEN PUTC('(') END;
+          Term(symbol, gen, expIntConst)
+        END;
+        WHILE (token = TkPlus) OR
+              (token = TkMinus) OR
+              (token = SymOr) DO
+          MOVE token TO op;
+          IF op = SymOr THEN
+            CheckBool(gen)
+          ELSE
+            CheckInt(gen)
+          END;
+          ReadToken;
+          IF NOT expIntConst THEN
+            PUTC(' ');
+            IF op = TkPlus THEN PUTC('+')
+            ELSIF op = TkMinus THEN PUTC('-')
+            ELSE PUTC('|'); PUTC('|') END;
+            PUTC(' ')
+          END;
+          Term(symbol, gen2, expIntConst);
+          IF gen.type = gen2.type THEN
+            IF (gen.type.form = FormInt) AND
+               (gen.mode = ClassConst) AND
+               (gen2.mode = ClassConst) THEN
+              IF op = TkPlus THEN
+                Add(gen, gen2)
+              ELSE
+                Sub(gen, gen2)
+              END
+            ELSE
+              IF expIntConst THEN
+                RaiseError("const int?")
+              END
+            END
+          ELSE
+            RaiseError("incompatible types")
+          END
+        END;
+        IF NOT expIntConst THEN PUTC(')'); PUTC(')') END
+      END SimpleExpr;
+
+
+    BEGIN (* Expr *)
+      IF NOT expIntConst THEN PUTC('(') END;
+      SimpleExpr(symbol, gen, expIntConst);
+      IF (token >= TkEq) AND (token <= TkGtr) THEN
+        IF expIntConst THEN
+          RaiseError("const int?")
+        END;
+        MOVE token TO op;
+        ReadToken;
+        PUTC(' ');
+        IF op = TkEq THEN PUTC('='); PUTC('=')
+        ELSIF op = TkEqN THEN PUTC('!'); PUTC('=')
+        ELSIF op = TkLss THEN PUTC('<')
+        ELSIF op = TkGEq THEN PUTC('>'); PUTC('=')
+        ELSIF op = TkLEq THEN PUTC('<'); PUTC('=')
+        ELSE (* TkGtr *) PUTC('>') END;
+        PUTC(' ');
+        SimpleExpr(symbol, gen2, expIntConst);
+        MOVE boolType TO gen.type
+      END;
+      IF NOT expIntConst THEN PUTC(')') END
+    END Expr;
+
+
+  PROCEDURE ConstExpr(VAR const : INT);
+
+    VAR symbol : Symbol; gen : Gen;
+
+    BEGIN
+      Expr(symbol, gen, TRUE);
+      MOVE gen.addr TO const
+    END ConstExpr;
+
+
+  PROCEDURE TypeDef(VAR type : Type;
+                    expStruc : BOOL);
+
+    VAR symbol : Symbol;
+
+
+    PROCEDURE ArrayType(VAR type : Type);
+
+      BEGIN
+        ReadToken;
+        NewType(type, FormArray);
+        ConstExpr(type.len);
+        AcceptOf; ReadToken;
+        TypeDef(type.base, FALSE);
+        MOVE type.len * type.base.size TO type.size
+      END ArrayType;
+
+
+    PROCEDURE PointerType(VAR type : Type);
+
+      VAR symbol : Symbol; forward : Forward;
+
+      BEGIN
+        ReadToken; AcceptTo;
+        NewType(type, FormPointer);
+        MOVE intType.size TO type.size;
+        ReadToken; AcceptIdent;
+        FindSymbol(symbol, topScope, ident);
+        IF symbol.next = marker THEN
+          NEW(forward);
+          CopyIdent(forward.ident, ident);
+          MOVE type TO forward.type;
+          IF topScope.forwards = NIL THEN
+            NEW(topScope.forwards);
+            MOVE NIL TO topScope.forwards.next
+          END;
+          MOVE topScope.forwards.next TO forward.next;
+          MOVE forward TO topScope.forwards.next
+        ELSE
+          IF symbol.next.type.form = FormRecord THEN
+            MOVE symbol.next.type TO type.base
+          ELSE
+            RaiseError("record type?")
+          END
+        END;
+        ReadToken
+      END PointerType;
+
+
+    PROCEDURE RecordType(VAR type : Type);
+
+      VAR size : INT;
+
+
+      PROCEDURE FieldDecl(VAR addr : INT);
+
+        VAR symbol : Symbol;
+
+        BEGIN
+          ReadToken;
+          IdentDef(symbol, ClassField);
+          MOVE addr TO symbol.value;
+          AcceptColon; ReadToken;
+          TypeDef(symbol.type, FALSE);
+          MOVE addr + symbol.type.size TO addr
+        END FieldDecl;
+
+
+      BEGIN (* RecordType *)
+        MOVE 0 TO size;
+        OpenScope;
+        FieldDecl(size);
+        WHILE token = TkSemic DO
+          FieldDecl(size)
+        END;
+        NewType(type, FormRecord);
+        MOVE size TO type.size;
+        MOVE topScope TO type.scope;
+        CloseScope; AcceptEnd; ReadToken
+      END RecordType;
+
+
+    BEGIN (* TypeDef *)
+      IF token = TkIdent THEN
+        IF expStruc THEN
+          RaiseError("struc type?")
+        END;
+        IdentUse(symbol);
+        IF symbol.class = ClassType THEN
+          MOVE symbol.type TO type
+        ELSE
+          RaiseError("type?")
+        END
+      ELSIF token = SymArray THEN
+        ArrayType(type)
+      ELSIF token = SymPointer THEN
+        PointerType(type)
+      ELSIF token = SymRecord THEN
+        RecordType(type)
+      ELSE
+        RaiseError("type?")
+      END
+    END TypeDef;
+
+
+  PROCEDURE StmtList;
+
+
+    PROCEDURE MoveStmt;
+
+      VAR symbol : Symbol; gen : Gen;
+          symbol2 : Symbol; gen2 : Gen;
+
+      BEGIN
+        PUTC('m'); PUTC('(');
+        ReadToken;
+        Expr(symbol, gen, FALSE);
+        PUTC(','); PUTC(' ');
+        AcceptTo; ReadToken; Expr(symbol2, gen2, FALSE);
+        IF (NOT symbol2.const) AND
+           ((gen2.mode = ClassVar) OR (gen2.mode = ClassPar)) AND
+           (gen2.type.form < FormArray) THEN
+          CheckType(gen, gen2.type)
+        ELSE
+          RaiseError("invalid assignment")
+        END;
+        PUTC(')')
+      END MoveStmt;
+
+
+    PROCEDURE WhileStmt;
+
+      VAR
+        symbol : Symbol;
+        gen : Gen;
+
+      BEGIN
+        PrintIdent("while"); PUTC(' '); PUTC('(');
+        ReadToken; Expr(symbol, gen, FALSE); CheckBool(gen);
+        AcceptDo; ReadToken; PUTC(')'); PUTC(' ');
+        StmtList; AcceptEnd; ReadToken
+      END WhileStmt;
+
+
+    PROCEDURE IfStmt;
+
+      VAR
+        symbol : Symbol;
+        gen : Gen;
+
+      BEGIN
+        PrintIdent("if"); PUTC(' '); PUTC('(');
+        ReadToken; Expr(symbol, gen, FALSE); CheckBool(gen);
+        AcceptThen; ReadToken;
+        PUTC(')'); PUTC(' ');
+        StmtList;
+        WHILE token = SymElsif DO
+          PrintIdent("else if (");
+          ReadToken; Expr(symbol, gen, FALSE);
+          AcceptThen; ReadToken;
+          PUTC(')'); PUTC(0AX);
+          StmtList
+        END;
+        IF token = SymElse THEN
+          ReadToken; PrintIdent("else"); PUTC(' ');
+          StmtList
+        END;
+        AcceptEnd; ReadToken
+      END IfStmt;
+
+
+    PROCEDURE ProcStmt;
+
+      VAR symbol : Symbol; param : Symbol;
+
+
+      PROCEDURE Inline(symbol : Symbol);
+
+        VAR param : Symbol; gen : Gen;
+
+        BEGIN
+          IF (symbol.value >= InlineAssert) AND
+             (symbol.value <= InlineNew) THEN
+            AcceptParenL; ReadToken;
+            IF symbol.value = InlineAssert THEN
+              PrintIdent("p_assert"); PUTC('(');
+              Expr(param, gen, FALSE); CheckBool(gen);
+              PUTC(','); PUTC(' ');
+              IF (gen.mode = ClassConst) AND (gen.addr = 0) THEN
+                PUTC('0')
+              ELSE
+                PrintInt(markedLine, FALSE)
+              END
+            ELSIF symbol.value = InlineGetc THEN
+              Expr(param, gen, FALSE); CheckChar(gen);
+              PUTC(' '); PUTC('='); PUTC(' ');
+              PrintIdent("getchar"); PUTC('(')
+            ELSIF symbol.value = InlinePutc THEN
+              PrintIdent("putchar"); PUTC('(');
+              Expr(param, gen, FALSE);
+              CheckChar(gen)
+            ELSIF symbol.value = InlinePutce THEN
+              PrintIdent("fputc"); PUTC('(');
+              Expr(param, gen, FALSE); CheckChar(gen);
+              PUTC(','); PUTC(' '); PrintIdent("stderr")
+            ELSE (* InlineNew *)
+              PUTC('n'); PUTC('(');
+              Expr(param, gen, FALSE);
+              CheckPointer(gen);
+              PUTC(','); PUTC(' ');
+              GenType(gen.type.base)
+            END;
+            AcceptParenR; ReadToken; PUTC(')')
+          ELSE
+            RaiseError("statment?")
+          END
+        END Inline;
+
+
+      PROCEDURE Param(VAR param : Symbol);
+
+        VAR symbol : Symbol; gen : Gen;
+
+        BEGIN
+          IF (param.class = ClassPar) OR
+             (param.class = ClassVar) AND (param.value >= 0) THEN
+            IF token = TkString THEN
+              IF (param.class = ClassPar) AND
+                 (param.type.form = FormArray) AND
+                 (param.type.base.form = FormChar) AND
+                 (param.const) THEN
+                PUTC('"'); GenString(string); PUTC('"'); ReadToken
+              ELSE
+                RaiseError("const char array?")
+              END
+            ELSE
+              IF (param.class = ClassPar) AND
+                 (param.type.form <> FormArray) THEN
+                PUTC('&')
+              END;
+              Expr(symbol, gen, FALSE);
+              CheckType(gen, param.type)
+            END;
+            MOVE param.next TO param
+          ELSE
+            RaiseError("too many parameters")
+          END
+        END Param;
+
+
+      PROCEDURE CheckParamsTooFew(param : Symbol);
+
+        BEGIN
+          IF (param.class = ClassPar) OR
+             (param.class = ClassVar) AND (param.value >= 0) THEN
+            RaiseError("too few parameters")
+          END
+        END CheckParamsTooFew;
+
+
+      BEGIN (* ProcStmt *)
+        IdentUse(symbol);
+        IF symbol.class = ClassInline THEN
+          Inline(symbol)
+        ELSIF symbol.class = ClassProc THEN
+          MOVE symbol.scope.symbols.next TO param;
+          GenAddr(symbol.level, symbol.value);
+          PUTC('(');
+          IF token = TkParenL THEN
+            ReadToken;
+            IF token = TkParenR THEN
+              CheckParamsTooFew(param); ReadToken
+            ELSE
+              Param(param);
+              WHILE token = TkComma DO
+                PUTC(','); PUTC(' ');
+                ReadToken; Param(param)
+              END;
+              CheckParamsTooFew(param);
+              AcceptParenR; ReadToken
+            END
+          ELSE
+            CheckParamsTooFew(param)
+          END;
+          PUTC(')')
+        ELSE
+          RaiseError("statment?")
+        END
+      END ProcStmt;
+
+
+    PROCEDURE Stmt;
+
+      BEGIN
+        IF token = SymMove THEN
+          MoveStmt
+        ELSIF token = SymWhile THEN
+          WhileStmt
+        ELSIF token = SymIf THEN
+          IfStmt
+        ELSIF token = TkIdent THEN
+          ProcStmt
+        ELSE
+          RaiseError("statment?")
+        END;
+        PUTC(';'); PUTC(0AX)
+      END Stmt;
+
+
+    BEGIN (* StmtList *)
+      PUTC('{'); PUTC(0AX);
+      Stmt;
+      WHILE token = TkSemic DO
+        ReadToken;
+        Stmt
+      END;
+      PUTC('}'); PUTC(' ')
+    END StmtList;
+
+
+  PROCEDURE Declarations(VAR memalloc : INT);
+
+
+    PROCEDURE ConstDecl;
+
+      VAR symbol : Symbol;
+
+      BEGIN
+        IdentDef(symbol, ClassConst); AcceptEq;
+        MOVE intType TO symbol.type;
+        ReadToken; ConstExpr(symbol.value)
+      END ConstDecl;
+
+
+    PROCEDURE TypeDecl;
+
+      VAR symbol : Symbol;
+
+
+      PROCEDURE ResolveForwards(VAR ident : Ident; record : Type);
+
+        VAR forward : Forward; cmp : INT;
+
+        BEGIN
+          MOVE topScope.forwards TO forward;
+          IF forward <> NIL THEN
+            WHILE forward.next <> NIL DO
+              CompIdent(cmp, forward.next.ident, ident);
+              IF cmp = 0 THEN
+                MOVE record TO forward.next.type.base;
+                MOVE forward.next.next TO forward.next
+              ELSE
+                MOVE forward.next TO forward
+              END
+            END
+          END
+        END ResolveForwards;
+
+
+      BEGIN (* TypeDecl *)
+        IdentDef(symbol, ClassType); AcceptEq;
+        ReadToken; TypeDef(symbol.type, TRUE);
+        IF symbol.type.form = FormRecord THEN
+          ResolveForwards(symbol.name, symbol.type)
+        END
+      END TypeDecl;
+
+
+    PROCEDURE CheckForwards;
+
+      BEGIN
+        IF (topScope.forwards <> NIL) AND
+           (topScope.forwards.next <> NIL) THEN
+          PrintErrorHeader; PrintStringErr("unresolved forward reference: ");
+          PrintIdentErr(topScope.forwards.next.ident); PUTCE(0AX);
+          ASSERT(FALSE)
+        END
+      END CheckForwards;
+
+
+    PROCEDURE VarDecl(VAR addr : INT);
+
+      VAR symbol : Symbol;
+
+      BEGIN
+        IdentDef(symbol, ClassVar); AcceptColon;
+        ReadToken; TypeDef(symbol.type, FALSE);
+        MOVE addr - symbol.type.size TO addr; Align(addr);
+        MOVE addr TO symbol.value
+      END VarDecl;
+
+
+    PROCEDURE ProcDecl;
+
+      VAR symbol : Symbol; parsize : INT; varsize : INT; cmp : INT;
+
+
+      PROCEDURE ParamDecl(VAR addr : INT);
+
+        VAR symbol : Symbol; size : INT; offs: INT;
+
+        BEGIN
+          IF token = SymVar THEN
+            ReadToken; IdentDef(symbol, ClassPar)
+          ELSIF token = SymConst THEN
+            ReadToken; IdentDef(symbol, ClassPar); MOVE TRUE TO symbol.const
+          ELSE
+            IdentDef(symbol, ClassVar)
+          END;
+          AcceptColon; ReadToken; TypeDef(symbol.type, FALSE);
+          IF symbol.class = ClassVar THEN
+            IF symbol.type.form >= FormArray THEN
+              RaiseError("scalar type?")
+            END;
+            MOVE symbol.type.size TO size
+          ELSE
+            MOVE intType.size TO size
+          END;
+          Align(size); MOVE addr + size TO addr; MOVE addr TO offs;
+          IF token = TkSemic THEN
+            ReadToken; ParamDecl(addr)
+          END;
+          MOVE addr - offs + 8 TO symbol.value
+        END ParamDecl;
+
+
+      BEGIN (* ProcDecl *)
+        ReadToken; IdentDef(symbol, ClassProc);
+        MOVE id TO symbol.value; MOVE id + 1 TO id;
+        MOVE level + 1 TO level; OpenScope;
+        MOVE topScope TO symbol.scope;
+        MOVE 0 TO parsize;
+        IF token = TkParenL THEN
+          ReadToken;
+          IF token <> TkParenR THEN
+            ParamDecl(parsize); AcceptParenR; ReadToken
+          END
+        END;
+        AcceptSemic; ReadToken;
+        GenProcDecl(symbol); PUTC(';'); PUTC(0AX);
+        (* ProcBody *)
+        MOVE 0 TO varsize; Declarations(varsize);
+        GenProcBody(symbol);
+        AcceptBegin; ReadToken; StmtList; GenProcBodyEnd;
+        AcceptEnd; ReadToken; AcceptIdent;
+        CompIdent(cmp, ident, symbol.name);
+        IF cmp <> 0 THEN
+          RaiseError("identifier mismatch")
+        END;
+        ReadToken;
+        CloseScope; MOVE level - 1 TO level
+      END ProcDecl;
+
+
+    BEGIN (* Declarations *)
+      IF token = SymConst THEN
+        ReadToken;
+        WHILE token = TkIdent DO
+          ConstDecl; AcceptSemic; ReadToken
+        END
+      END;
+      IF token = SymType THEN
+        ReadToken;
+        WHILE token = TkIdent DO
+          TypeDecl; AcceptSemic; ReadToken
+        END
+      END;
+      CheckForwards; GenTypeDecls;
+      IF token = SymVar THEN
+        ReadToken;
+        WHILE token = TkIdent DO
+          VarDecl(memalloc); AcceptSemic; ReadToken
+        END
+      END;
+      IF level = 0 THEN
+        PUTC(0AX); GenVarDecls
+      END;
+      WHILE token = SymProcedure DO
+        ProcDecl; AcceptSemic; ReadToken
+      END
+    END Declarations;
+
+
+  BEGIN (* ParseModule *)
+    ReadToken; AcceptModule; ReadToken; AcceptIdent;
+    CopyIdent(moduleName, ident);
+    ReadToken; AcceptSemic;
+    OpenScope; MOVE 0 TO varsize;
+    ReadToken; Declarations(varsize); PUTC(0AX);
+    PrintString("int main(int argc, char* argv[])"); PUTC(0AX);
+    PUTC('{'); PUTC(0AX); 
+    IF token = SymBegin THEN
+      ReadToken; StmtList
+    END;
+    PrintIdent("return");
+    PUTC(' '); PUTC('0'); PUTC(';'); PUTC(0AX);
+    PUTC('}'); PUTC(0AX); 
+    CloseScope; AcceptEnd; ReadToken; AcceptIdent;
+    CompIdent(cmp, moduleName, ident);
+    IF cmp <> 0 THEN
+      RaiseError("modulename?")
+    END;
+    ReadToken; AcceptDot
+  END ParseModule;
+
+
+
+BEGIN (* MODULE *)
+
+
+  (* Basis *)
+
+  MOVE -MaxInt TO MinInt; MOVE MinInt - 1 TO MinInt;
+
+  CopyIdent(syms[SymAnd], "AND");
+  CopyIdent(syms[SymArray], "ARRAY");
+  CopyIdent(syms[SymBegin], "BEGIN");
+  CopyIdent(syms[SymConst], "CONST");
+  CopyIdent(syms[SymDo], "DO");
+  CopyIdent(syms[SymElse], "ELSE");
+  CopyIdent(syms[SymElsif], "ELSIF");
+  CopyIdent(syms[SymEnd], "END");
+  CopyIdent(syms[SymFalse], "FALSE");
+  CopyIdent(syms[SymGen], "GEN");
+  CopyIdent(syms[SymIf], "IF");
+  CopyIdent(syms[SymModule], "MODULE");
+  CopyIdent(syms[SymMove], "MOVE");
+  CopyIdent(syms[SymNil], "NIL");
+  CopyIdent(syms[SymNot], "NOT");
+  CopyIdent(syms[SymOf], "OF");
+  CopyIdent(syms[SymOr], "OR");
+  CopyIdent(syms[SymPointer], "POINTER");
+  CopyIdent(syms[SymProcedure], "PROCEDURE");
+  CopyIdent(syms[SymRecord], "RECORD");
+  CopyIdent(syms[SymRepeat], "REPEAT");
+  CopyIdent(syms[SymThen], "THEN");
+  CopyIdent(syms[SymTo], "TO");
+  CopyIdent(syms[SymTrue], "TRUE");
+  CopyIdent(syms[SymType], "TYPE");
+  CopyIdent(syms[SymUntil], "UNTIL");
+  CopyIdent(syms[SymVar], "VAR");
+  CopyIdent(syms[SymWhile], "WHILE");
+
+
+  (* Scanner *)
+
+  MOVE 0 TO activeLine; MOVE 0AX TO char; ReadChar;
+
+
+  (* Symboltabelle *)
+
+  MOVE 0 TO id;
+  NewType(boolType, FormBool); MOVE 1 TO boolType.size;
+  NewType(charType, FormChar); MOVE 1 TO charType.size;
+  NewType(intType, FormInt); MOVE 4 TO intType.size;
+
+  NEW(marker); MOVE 0 TO marker.class;
+  MOVE 0 TO level; MOVE NIL TO topScope; OpenScope;
+  InitSymbols;
+
+
+  (* Generator *)
+
+
+  PrintString("#include <stdio.h>"); PUTC(0AX);
+  PrintString("#include <stdlib.h>"); PUTC(0AX);
+
+  PrintString("typedef signed int t_0;"); PUTC(0AX);
+  PrintString("typedef char t_1;"); PUTC(0AX);
+  PrintString("typedef signed int t_2;"); PUTC(0AX);
+
+  PrintString("#define m(x, y) y = x;"); PUTC(0AX);
+  PrintString("#define n(x, y) x = malloc(sizeof(y))"); PUTC(0AX);
+
+  PrintString("void p_assert(int v_check, int v_line) {"); PUTC(0AX);
+  PrintString("if (!v_check) {"); PUTC(0AX);
+  PrintString("if (v_line) fprintf(stderr,"); PUTC(0AX);
+  PrintString('"assert violation in line %i", v_line);'); PUTC(0AX);
+  PrintString("exit(1); } }"); PUTC(0AX);
+
+
+
+  (* Parser *)
+
+  ParseModule
+
+END npcc0.
